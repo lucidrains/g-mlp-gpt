@@ -62,7 +62,6 @@ class CausalSGU(nn.Module):
         self,
         dim,
         dim_seq,
-        attn_dim = None,
         init_eps = 1e-3,
         heads = 4
     ):
@@ -74,8 +73,6 @@ class CausalSGU(nn.Module):
         self.heads = heads
         self.weight = nn.Parameter(torch.zeros(heads, dim_seq, dim_seq))
         self.bias = nn.Parameter(torch.zeros(heads, dim_seq))
-
-        self.attn = Attention(dim, dim_out, attn_dim) if exists(attn_dim) else None
 
         init_eps /= dim_seq
         nn.init.uniform_(self.weight, -init_eps, init_eps)
@@ -105,7 +102,6 @@ class CausalLocalSGU(nn.Module):
         self,
         dim,
         dim_seq,
-        attn_dim = None,
         init_eps = 1e-3,
         heads = 4,
         window = 128
@@ -119,8 +115,6 @@ class CausalLocalSGU(nn.Module):
         self.window = window
         self.weight = nn.Parameter(torch.zeros(heads, window, window * 2))
         self.bias = nn.Parameter(torch.zeros(heads, window))
-
-        self.attn = Attention(dim, dim_out, attn_dim) if exists(attn_dim) else None
 
         init_eps /= window
         nn.init.uniform_(self.weight, -init_eps, init_eps)
@@ -158,7 +152,6 @@ def gMLPBlock(
     dim,
     dim_ff,
     seq_len,
-    attn_dim = None,
     heads = 4,
     causal = False,
     window = None
@@ -168,7 +161,7 @@ def gMLPBlock(
     return nn.Sequential(
         nn.Linear(dim, dim_ff),
         nn.GELU(),
-        SGU(dim_ff, seq_len, attn_dim, causal, heads = heads),
+        SGU(dim_ff, seq_len, causal, heads = heads),
         nn.Linear(dim_ff // 2, dim)
     )
 
@@ -184,7 +177,6 @@ class gMLPGPT(nn.Module):
         seq_len,
         heads = 2,
         ff_mult = 4,
-        attn_dim = None,
         prob_survival = 1.,
         window = None
     ):
@@ -195,7 +187,7 @@ class gMLPGPT(nn.Module):
 
         self.to_embed = nn.Embedding(num_tokens, dim) if exists(num_tokens) else nn.Identity()
 
-        self.layers = nn.ModuleList([Residual(PreNorm(dim, gMLPBlock(dim = dim, dim_ff = dim_ff, seq_len = seq_len, heads = heads, attn_dim = attn_dim, window = window))) for i in range(depth)])
+        self.layers = nn.ModuleList([Residual(PreNorm(dim, gMLPBlock(dim = dim, dim_ff = dim_ff, seq_len = seq_len, heads = heads, window = window))) for i in range(depth)])
 
         self.to_logits = nn.Sequential(
             nn.LayerNorm(dim),
