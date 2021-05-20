@@ -4,6 +4,30 @@ This repository will attempt to crack long context autoregressive language model
 
 GPT is technically a misnomer now, since there will be no attention (transformer) at all contained in the architecture.
 
+## Install
+
+```bash
+$ pip install g-mlp-gpt
+```
+
+## Usage
+
+```python
+import torch
+from g_mlp_gpt import gMLPGPT
+
+model = gMLPGPT(
+    num_tokens = 20000,
+    dim = 512,
+    depth = 4,
+    seq_len = 1024,
+    ff_mult = 4
+)
+
+x = torch.randint(0, 20000, (1, 1000))
+logits = model(x) # (1, 1000, 20000)
+```
+
 ## Citations
 
 ```bibtex
