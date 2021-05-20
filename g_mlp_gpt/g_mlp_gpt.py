@@ -161,18 +161,18 @@ class AxiallyFold(nn.Module):
 
     def forward(self, x):
         every = self.every
-        if every == 1:
+        if every <= 1:
             return self.fn(x)
 
         n = x.shape[1]
         x = pad_to_multiple(x, self.every, dim = 1)
-        x = rearrange(x, 'b n (d e) -> (b e) n d', e = every)
+        x = rearrange(x, 'b (n e) d -> (b e) n d', e = every)
         x = self.fn(x)
 
-        x = rearrange(x, '(b e) n d -> b (d e) n', e = every)
+        x = rearrange(x, '(b e) n d -> b d (n e)', e = every)
         x = F.pad(x, (every - 1, 0), value = 0)
         out = self.conv(x)
-        out = rearrange('b d n -> b n d')
+        out = rearrange(out, 'b d n -> b n d')
         return out[:, :n]
 
 def gMLPBlock(
@@ -184,7 +184,7 @@ def gMLPBlock(
     causal = False,
     window = None
 ):
-    SGU = partial(CausalLocalSGU, window = window) if exists(window) else CausalSGU
+    SGU = partial(CausalLocalSGU, window = window) if exists(window) and window < seq_len else CausalSGU
 
     return nn.Sequential(
         nn.Linear(dim, dim_ff),
