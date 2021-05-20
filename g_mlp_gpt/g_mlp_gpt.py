@@ -8,10 +8,15 @@ from torch import nn, einsum
 from einops.layers.torch import Rearrange, Reduce
 from einops import rearrange
 
+from g_mlp_gpt.reversible import ReversibleSequence, SequentialSequence
+
 # functions
 
 def exists(val):
     return val is not None
+
+def cast_tuple(val, num):
+    return ((val,) * num) if not isinstance(val, tuple) else val
 
 def pad_to_multiple(tensor, multiple, dim = -1, value = 0):
     seqlen = tensor.shape[dim]
@@ -150,8 +155,8 @@ class CausalLocalSGU(nn.Module):
 def gMLPBlock(
     *,
     dim,
-    dim_ff,
     seq_len,
+    dim_ff,
     heads = 4,
     causal = False,
     window = None
@@ -171,13 +176,14 @@ class gMLPGPT(nn.Module):
     def __init__(
         self,
         *,
-        num_tokens = None,
+        num_tokens,
         dim,
         depth,
         seq_len,
-        heads = 2,
+        heads = 1,
         ff_mult = 4,
         prob_survival = 1.,
+        reversible = False,
         window = None
     ):
         super().__init__()
@@ -185,17 +191,32 @@ class gMLPGPT(nn.Module):
         self.seq_len = seq_len
         self.prob_survival = prob_survival
 
-        self.to_embed = nn.Embedding(num_tokens, dim) if exists(num_tokens) else nn.Identity()
+        self.to_embed = nn.Embedding(num_tokens, dim)
 
-        self.layers = nn.ModuleList([Residual(PreNorm(dim, gMLPBlock(dim = dim, dim_ff = dim_ff, seq_len = seq_len, heads = heads, window = window))) for i in range(depth)])
+        window = cast_tuple(window, depth)
+        layers = nn.ModuleList([])
+
+        for ind, w in zip(range(depth), window):
+            layer_blocks = nn.ModuleList([
+                PreNorm(dim, gMLPBlock(dim = dim, dim_ff = dim_ff, seq_len = seq_len, heads = heads, window = w))
+            ])
+
+            if reversible:
+                layer_blocks.append(PreNorm(dim, gMLPBlock(dim = dim, dim_ff = dim_ff, seq_len = seq_len, heads = heads, window = w)))
+
+            layers.append(layer_blocks)
+
+        execute_klass = SequentialSequence if not reversible else ReversibleSequence
+        self.net = execute_klass(layers)
 
         self.to_logits = nn.Sequential(
             nn.LayerNorm(dim),
             nn.Linear(dim, num_tokens)
-        ) if exists(num_tokens) else nn.Identity()
+        )
 
     def forward(self, x):
+        layer_dropout = 1. - self.prob_survival
+
         x = self.to_embed(x)
-        layers = self.layers if not self.training else dropout_layers(self.layers, self.prob_survival)
-        out = nn.Sequential(*layers)(x)
+        out = self.net(x, layer_dropout = layer_dropout)
         return self.to_logits(out)

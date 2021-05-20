@@ -21,7 +21,7 @@ model = gMLPGPT(
     dim = 512,
     depth = 4,
     seq_len = 1024,
-    ff_mult = 4
+    window_size = (128, 256, 512, 1024) # window sizes for each depth
 )
 
 x = torch.randint(0, 20000, (1, 1000))
