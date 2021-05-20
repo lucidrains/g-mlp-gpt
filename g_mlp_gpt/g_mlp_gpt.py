@@ -1,4 +1,5 @@
 from math import ceil
+from functools import partial
 from random import randrange
 import torch
 import torch.nn.functional as F
@@ -56,7 +57,7 @@ class PreNorm(nn.Module):
         x = self.norm(x)
         return self.fn(x, **kwargs)
 
-class CausalSpatialGatingUnit(nn.Module):
+class CausalSGU(nn.Module):
     def __init__(
         self,
         dim,
@@ -89,15 +90,68 @@ class CausalSpatialGatingUnit(nn.Module):
         weight, bias = self.weight, self.bias
         weight, bias = weight[:, :n, :n], bias[:, :n]
 
-        mask = torch.ones(weight.shape[:2], device = device).triu_(1).bool()
-        weight = weight.masked_fill(mask[..., None], 0.)
+        mask = torch.ones(weight.shape[-2:], device = device).triu_(1).bool()
+        weight = weight.masked_fill(mask[None, ...], 0.)
 
         gate = rearrange(gate, 'b n (h d) -> b h n d', h = h)
-        gate = einsum('b h n d, h n m -> b h m d', gate, weight)
+        gate = einsum('b h n d, h m n -> b h m d', gate, weight)
         gate = gate + rearrange(bias, 'h n -> () h n ()')
         gate = rearrange(gate, 'b h n d -> b n (h d)')
 
         return gate * res
+
+class CausalLocalSGU(nn.Module):
+    def __init__(
+        self,
+        dim,
+        dim_seq,
+        attn_dim = None,
+        init_eps = 1e-3,
+        heads = 4,
+        window = 128
+    ):
+        super().__init__()
+        dim_out = dim // 2
+
+        self.norm = nn.LayerNorm(dim_out)
+
+        self.heads = heads
+        self.window = window
+        self.weight = nn.Parameter(torch.zeros(heads, window, window * 2))
+        self.bias = nn.Parameter(torch.zeros(heads, window))
+
+        self.attn = Attention(dim, dim_out, attn_dim) if exists(attn_dim) else None
+
+        init_eps /= window
+        nn.init.uniform_(self.weight, -init_eps, init_eps)
+        nn.init.constant_(self.bias, 1.)
+
+    def forward(self, x):
+        device, n, h, w = x.device, x.shape[1], self.heads, self.window
+
+        x = pad_to_multiple(x, w, dim = -2)
+        x = rearrange(x, 'b (w n) d -> b w n d', n = w)
+
+        res, gate = x.chunk(2, dim = -1)
+        gate = self.norm(gate)
+
+        gate = F.pad(gate, (0, 0, 0, 0, 1, 0), value = 0.)
+        gate = torch.cat((gate[:, :-1], gate[:, 1:]), dim = 2)
+
+        weight, bias = self.weight, self.bias
+
+        mask = torch.ones(weight.shape[-2:], device = device).triu_(1 + w).bool()
+        weight = weight.masked_fill(mask[None, ...], 0.)
+
+        gate = rearrange(gate, 'b w n (h d) -> b w h n d', h = h)
+        gate = einsum('b w h n d, h m n -> b w h m d', gate, weight)
+        gate = gate + rearrange(bias, 'h n -> () () h n ()')
+
+        gate = rearrange(gate, 'b w h n d -> b w n (h d)')
+
+        out = gate * res
+        out = rearrange(out, 'b w n d -> b (w n) d')
+        return out[:, :n]
 
 def gMLPBlock(
     *,
@@ -106,12 +160,15 @@ def gMLPBlock(
     seq_len,
     attn_dim = None,
     heads = 4,
-    causal = False
+    causal = False,
+    window = None
 ):
+    SGU = partial(CausalLocalSGU, window = window) if exists(window) else CausalSGU
+
     return nn.Sequential(
         nn.Linear(dim, dim_ff),
         nn.GELU(),
-        CausalSpatialGatingUnit(dim_ff, seq_len, attn_dim, causal, heads = heads),
+        SGU(dim_ff, seq_len, attn_dim, causal, heads = heads),
         nn.Linear(dim_ff // 2, dim)
     )
 
@@ -129,6 +186,7 @@ class gMLPGPT(nn.Module):
         ff_mult = 4,
         attn_dim = None,
         prob_survival = 1.,
+        window = None
     ):
         super().__init__()
         dim_ff = dim * ff_mult
@@ -137,7 +195,7 @@ class gMLPGPT(nn.Module):
 
         self.to_embed = nn.Embedding(num_tokens, dim) if exists(num_tokens) else nn.Identity()
 
-        self.layers = nn.ModuleList([Residual(PreNorm(dim, gMLPBlock(dim = dim, dim_ff = dim_ff, seq_len = seq_len, heads = heads, attn_dim = attn_dim))) for i in range(depth)])
+        self.layers = nn.ModuleList([Residual(PreNorm(dim, gMLPBlock(dim = dim, dim_ff = dim_ff, seq_len = seq_len, heads = heads, attn_dim = attn_dim, window = window))) for i in range(depth)])
 
         self.to_logits = nn.Sequential(
             nn.LayerNorm(dim),

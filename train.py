@@ -1,5 +1,5 @@
-from g_mlp_pytorch import gMLPGPT
-from g_mlp_pytorch.autoregressive_wrapper import AutoregressiveWrapper
+from g_mlp_gpt import gMLPGPT
+from g_mlp_gpt.autoregressive_wrapper import AutoregressiveWrapper
 
 import random
 import tqdm
@@ -41,8 +41,7 @@ model = gMLPGPT(
     dim = 512,
     seq_len = SEQ_LEN,
     depth = 8,
-    heads = 4,
-    causal = True
+    heads = 4
 )
 
 model = AutoregressiveWrapper(model)
