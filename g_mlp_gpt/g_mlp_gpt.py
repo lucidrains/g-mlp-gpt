@@ -152,6 +152,29 @@ class CausalLocalSGU(nn.Module):
         out = rearrange(out, 'b w n d -> b (w n) d')
         return out[:, :n]
 
+class AxiallyFold(nn.Module):
+    def __init__(self, dim, every, fn):
+        super().__init__()
+        self.fn = fn
+        self.every = every
+        self.conv = nn.Conv1d(dim, dim, kernel_size = every, groups = dim) if every > 1 else None
+
+    def forward(self, x):
+        every = self.every
+        if every == 1:
+            return self.fn(x)
+
+        n = x.shape[1]
+        x = pad_to_multiple(x, self.every, dim = 1)
+        x = rearrange(x, 'b n (d e) -> (b e) n d', e = every)
+        x = self.fn(x)
+
+        x = rearrange(x, '(b e) n d -> b (d e) n', e = every)
+        x = F.pad(x, (every - 1, 0), value = 0)
+        out = self.conv(x)
+        out = rearrange('b d n -> b n d')
+        return out[:, :n]
+
 def gMLPBlock(
     *,
     dim,
@@ -184,7 +207,8 @@ class gMLPGPT(nn.Module):
         ff_mult = 4,
         prob_survival = 1.,
         reversible = False,
-        window = None
+        window = None,
+        axial = 1
     ):
         super().__init__()
         dim_ff = dim * ff_mult
@@ -194,15 +218,18 @@ class gMLPGPT(nn.Module):
         self.to_embed = nn.Embedding(num_tokens, dim)
 
         window = cast_tuple(window, depth)
+        axial = cast_tuple(axial, depth)
         layers = nn.ModuleList([])
 
-        for ind, w in zip(range(depth), window):
+        for ind, w, ax in zip(range(depth), window, axial):
+            get_gmlp = lambda: PreNorm(dim, AxiallyFold(dim, ax, gMLPBlock(dim = dim, dim_ff = dim_ff, seq_len = seq_len, heads = heads, window = w)))
+
             layer_blocks = nn.ModuleList([
-                PreNorm(dim, gMLPBlock(dim = dim, dim_ff = dim_ff, seq_len = seq_len, heads = heads, window = w))
+                get_gmlp()
             ])
 
             if reversible:
-                layer_blocks.append(PreNorm(dim, gMLPBlock(dim = dim, dim_ff = dim_ff, seq_len = seq_len, heads = heads, window = w)))
+                layer_blocks.append(get_gmlp())
 
             layers.append(layer_blocks)
 
