@@ -62,6 +62,25 @@ class PreNorm(nn.Module):
         x = self.norm(x)
         return self.fn(x, **kwargs)
 
+class GEGLU(nn.Module):
+    def forward(self, x):
+        x, gates = x.chunk(2, dim = -1)
+        return x * F.gelu(gates)
+
+class FeedForward(nn.Module):
+    def __init__(self, dim, mult = 4):
+        super().__init__()
+        inner_dim = int(dim * mult * 2 / 3)
+
+        self.net = nn.Sequential(
+            nn.Linear(dim, inner_dim * 2),
+            GEGLU(),
+            nn.Linear(inner_dim, dim)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
 class CausalSGU(nn.Module):
     def __init__(
         self,
@@ -229,7 +248,7 @@ class gMLPGPT(nn.Module):
             ])
 
             if reversible:
-                layer_blocks.append(get_gmlp())
+                layer_blocks.append(FeedForward(dim, mult = ff_mult))
 
             layers.append(layer_blocks)
 
