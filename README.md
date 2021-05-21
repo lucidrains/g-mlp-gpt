@@ -28,6 +28,26 @@ x = torch.randint(0, 20000, (1, 1000))
 logits = model(x) # (1, 1000, 20000)
 ```
 
+16k context length
+
+```python
+import torch
+from g_mlp_gpt import gMLPGPT
+
+model = gMLPGPT(
+    num_tokens = 20000,
+    dim = 512,
+    seq_len = 16384,
+    depth = 8,
+    reversible = True,
+    window = (128, 128, 256, 512, 1024, 1024, 2048, 2048, 4096, 4096, 8192, 8192),
+    axial = (1, 1, 1, 1, 1, 1, 2, 2, 4, 4, 8, 8)
+).cuda()
+
+x = torch.randint(0, 20000, (1, 16384)).cuda()
+logits = model(x) # (1, 16384, 20000)
+```
+
 ## Citations
 
 ```bibtex
