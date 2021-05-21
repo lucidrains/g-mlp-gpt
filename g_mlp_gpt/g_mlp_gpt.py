@@ -5,7 +5,6 @@ import torch
 import torch.nn.functional as F
 from torch import nn, einsum
 
-from einops.layers.torch import Rearrange, Reduce
 from einops import rearrange
 
 from g_mlp_gpt.reversible import ReversibleSequence, SequentialSequence
