@@ -102,6 +102,8 @@ class CausalSGU(nn.Module):
         nn.init.uniform_(self.weight, -init_eps, init_eps)
         nn.init.constant_(self.bias, 1.)
 
+        self.register_buffer('mask', ~torch.ones(dim_seq, dim_seq).triu_(1).bool())
+
     def forward(self, x):
         device, n, h = x.device, x.shape[1], self.heads
 
@@ -111,8 +113,7 @@ class CausalSGU(nn.Module):
         weight, bias = self.weight, self.bias
         weight, bias = weight[:, :n, :n], bias[:, :n]
 
-        mask = torch.ones(weight.shape[-2:], device = device).triu_(1).bool()
-        weight = weight.masked_fill(mask[None, ...], 0.)
+        weight = weight * self.mask[None, ...].int().float()
 
         gate = rearrange(gate, 'b n (h d) -> b h n d', h = h)
         gate = einsum('b h n d, h m n -> b h m d', gate, weight)
@@ -144,6 +145,8 @@ class CausalLocalSGU(nn.Module):
         nn.init.uniform_(self.weight, -init_eps, init_eps)
         nn.init.constant_(self.bias, 1.)
 
+        self.register_buffer('mask', ~torch.ones(window, window * 2).triu_(window + 1).bool())
+
     def forward(self, x):
         device, n, h, w = x.device, x.shape[1], self.heads, self.window
 
@@ -158,8 +161,7 @@ class CausalLocalSGU(nn.Module):
 
         weight, bias = self.weight, self.bias
 
-        mask = torch.ones(weight.shape[-2:], device = device).triu_(1 + w).bool()
-        weight = weight.masked_fill(mask[None, ...], 0.)
+        weight = weight * self.mask[None, ...].int().float()
 
         gate = rearrange(gate, 'b w n (h d) -> b w h n d', h = h)
         gate = einsum('b w h n d, h m n -> b w h m d', gate, weight)
