@@ -226,8 +226,7 @@ class gMLPGPT(nn.Module):
         ff_mult = 4,
         prob_survival = 1.,
         reversible = False,
-        window = None,
-        axial = 1
+        window = None
     ):
         super().__init__()
         dim_ff = dim * ff_mult
@@ -237,10 +236,11 @@ class gMLPGPT(nn.Module):
         self.to_embed = nn.Embedding(num_tokens, dim)
 
         window = cast_tuple(window, depth)
-        axial = cast_tuple(axial, depth)
+        window = tuple(map(lambda t: t if isinstance(t, tuple) else (t, 1), window))
+
         layers = nn.ModuleList([])
 
-        for ind, w, ax in zip(range(depth), window, axial):
+        for ind, (w, ax) in zip(range(depth), window):
             get_gmlp = lambda: PreNorm(dim, AxiallyFold(dim, ax, gMLPBlock(dim = dim, dim_ff = dim_ff, seq_len = seq_len, heads = heads, window = w)))
 
             layer_blocks = nn.ModuleList([
