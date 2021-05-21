@@ -39,7 +39,7 @@ model = gMLPGPT(
     dim = 512,
     seq_len = 16384,
     reversible = True,
-    depth = 8,
+    depth = 12,
     window = (
         128,
         128,

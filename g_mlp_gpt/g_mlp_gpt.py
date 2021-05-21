@@ -238,6 +238,7 @@ class gMLPGPT(nn.Module):
 
         window = cast_tuple(window, depth)
         window = tuple(map(lambda t: t if isinstance(t, tuple) else (t, 1), window))
+        assert len(window) == depth, f'num window sizes {len(window)} must be equal to depth {depth}'
 
         layers = nn.ModuleList([])
 
