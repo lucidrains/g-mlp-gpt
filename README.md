@@ -38,7 +38,8 @@ model = gMLPGPT(
     num_tokens = 20000,
     dim = 512,
     seq_len = 16384,
-    reversible = True,
+    reversible = True,    # reversible networks
+    act = nn.Tanh(),      # tanh activation for spatial gating
     depth = 12,
     window = (
         128,

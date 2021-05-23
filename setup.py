@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'g-mlp-gpt',
   packages = find_packages(),
-  version = '0.0.9',
+  version = '0.0.11',
   license='MIT',
   description = 'gMLP - GPT',
   author = 'Phil Wang',
