@@ -86,7 +86,8 @@ class CausalSGU(nn.Module):
         dim,
         dim_seq,
         init_eps = 1e-3,
-        heads = 4
+        heads = 4,
+        act = nn.Identity()
     ):
         super().__init__()
         dim_out = dim // 2
@@ -128,7 +129,8 @@ class CausalLocalSGU(nn.Module):
         dim_seq,
         init_eps = 1e-3,
         heads = 4,
-        window = 128
+        window = 128,
+        act = nn.Identity()
     ):
         super().__init__()
         dim_out = dim // 2
@@ -185,7 +187,7 @@ class AxiallyFold(nn.Module):
             return self.fn(x)
 
         n = x.shape[1]
-        x = pad_to_multiple(x, self.every, dim = 1)
+        x = pad_to_multiple(x, self.every, dim = -2)
         x = rearrange(x, 'b (n e) d -> (b e) n d', e = every)
         x = self.fn(x)
 
@@ -202,14 +204,15 @@ def gMLPBlock(
     dim_ff,
     heads = 4,
     causal = False,
-    window = None
+    window = None,
+    act = nn.Identity()
 ):
     SGU = partial(CausalLocalSGU, window = window) if exists(window) and window < seq_len else CausalSGU
 
     return nn.Sequential(
         nn.Linear(dim, dim_ff),
         nn.GELU(),
-        SGU(dim_ff, seq_len, causal, heads = heads),
+        SGU(dim_ff, seq_len, causal, heads = heads, act = act),
         nn.Linear(dim_ff // 2, dim)
     )
 
@@ -227,7 +230,8 @@ class gMLPGPT(nn.Module):
         ff_mult = 4,
         prob_survival = 1.,
         reversible = False,
-        window = None
+        window = None,
+        act = nn.Identity()
     ):
         super().__init__()
         dim_ff = dim * ff_mult
@@ -243,7 +247,7 @@ class gMLPGPT(nn.Module):
         layers = nn.ModuleList([])
 
         for ind, (w, ax) in zip(range(depth), window):
-            get_gmlp = lambda: PreNorm(dim, AxiallyFold(dim, ax, gMLPBlock(dim = dim, dim_ff = dim_ff, seq_len = seq_len, heads = heads, window = w)))
+            get_gmlp = lambda: PreNorm(dim, AxiallyFold(dim, ax, gMLPBlock(dim = dim, dim_ff = dim_ff, seq_len = seq_len, heads = heads, window = w, act = act)))
 
             layer_blocks = nn.ModuleList([
                 get_gmlp()
