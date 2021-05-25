@@ -41,7 +41,8 @@ model = gMLPGPT(
     dim = 512,
     seq_len = SEQ_LEN,
     depth = 8,
-    window = (16, 32, 64, 128, 256, 512, 768, SEQ_LEN)
+    window = (16, 32, 64, 128, 256, 512, 768, SEQ_LEN),
+    attn_dim = 16
 )
 
 model = AutoregressiveWrapper(model)
