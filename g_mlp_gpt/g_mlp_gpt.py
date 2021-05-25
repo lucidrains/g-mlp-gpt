@@ -175,10 +175,11 @@ class CausalLocalSGU(nn.Module):
     def forward(self, x, **kwargs):
         device, n, h, w = x.device, x.shape[1], self.heads, self.window
 
-        x = pad_to_multiple(x, w, dim = -2)
-        x = rearrange(x, 'b (w n) d -> b w n d', n = w)
-
         res, gate = x.chunk(2, dim = -1)
+
+        gate = pad_to_multiple(gate, w, dim = -2)
+        gate = rearrange(gate, 'b (w n) d -> b w n d', n = w)
+
         gate = self.norm(gate)
 
         gate = F.pad(gate, (0, 0, 0, 0, 1, 0), value = 0.)
@@ -194,9 +195,10 @@ class CausalLocalSGU(nn.Module):
 
         gate = rearrange(gate, 'b w h n d -> b w n (h d)')
 
-        out = self.act(gate) * res
-        out = rearrange(out, 'b w n d -> b (w n) d')
-        return out[:, :n]
+        gate = rearrange(gate, 'b w n d -> b (w n) d')
+        gate = gate[:, :n]
+
+        return self.act(gate) * res
 
 class AxiallyFold(nn.Module):
     def __init__(self, dim, every, fn):
